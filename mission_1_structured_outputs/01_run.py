@@ -3,14 +3,19 @@ import json
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from openai import OpenAI
+from typing import Literal
 
 
 class TicketAnalysis(BaseModel):
-    """Model danych reprezentujący przeanalizowane zgłoszenie od klienta."""
-
-    category: str = Field(description="Kategoria zgłoszenia, np. 'billing', 'technical', 'sales'")
-    urgency: str = Field(description="Priorytet: 'low', 'medium' lub 'high'")
-    sentiment: str = Field(description="Nastawienie klienta: 'positive', 'neutral', 'negative'")
+    category: Literal["billing", "technical", "sales", "other"] = Field(
+        description="Kategoria zgłoszenia"
+    )
+    urgency: Literal["low", "medium", "high"] = Field(
+        description="Priorytet zgłoszenia"
+    )
+    sentiment: Literal["positive", "neutral", "negative"] = Field(
+        description="Nastawienie klienta"
+    )
     summary: str = Field(description="Jednozdaniowe, zwięzłe podsumowanie problemu")
 
 
@@ -20,7 +25,7 @@ def main() -> None:
 
     client = OpenAI(
         base_url=os.getenv("OPENAI_BASE_URL"),
-        api_key=os.getenv("OPENAI_API_KEY", "not-needed")
+        api_key=os.getenv("OPENAI_API_KEY", "not-needed"),
     )
     model_name = os.getenv("MODEL_NAME")
 
@@ -43,15 +48,15 @@ def main() -> None:
                         "Jesteś analitykiem zgłoszeń. Zwracasz WYŁĄCZNIE czysty tekst w formacie JSON.\n"
                         "Nie dodawaj żadnych powitań, komentarzy ani znaczników markdown.\n\n"
                         f"Twój JSON musi ściśle pasować do tego schematu:\n{schema_json}"
-                    )
+                    ),
                 },
                 {
                     "role": "user",
-                    "content": f"Przeanalizuj poniższą wiadomość i zwróć JSON:\n{customer_email}"
-                }
+                    "content": f"Przeanalizuj poniższą wiadomość i zwróć JSON:\n{customer_email}",
+                },
             ],
             response_format={"type": "json_object"},
-            temperature=0.1
+            temperature=0.1,
         )
 
         raw_content = response.choices[0].message.content.strip()
@@ -74,7 +79,7 @@ def main() -> None:
 
     except Exception as error:
         print(f"\nBłąd wykonania: {error}")
-        if 'raw_content' in locals():
+        if "raw_content" in locals():
             print(f"Surowa odpowiedź modelu:\n{raw_content}")
 
 

@@ -1,176 +1,122 @@
 # 01_run.md — Misja 1: Structured Outputs + Pydantic
 
-## 0. Najkrótsza odpowiedź techniczna
+## Status lekcji
 
-Plik `01_run.py` uczy pierwszej kluczowej umiejętności w systemach agentowych: **LLM nie ma zwracać luźnego tekstu, tylko dane o określonej strukturze**.
-
-Ten skrypt:
-
-1. definiuje oczekiwany format danych jako model `TicketAnalysis` w Pydantic,
-2. zamienia ten model na schemat JSON,
-3. wysyła do lokalnego lub kompatybilnego z OpenAI modelu LLM wiadomość klienta,
-4. wymusza odpowiedź w formacie JSON,
-5. oczyszcza odpowiedź z ewentualnych znaczników Markdown,
-6. waliduje odpowiedź przez Pydantic,
-7. drukuje poprawny, zwalidowany obiekt.
-
-Główna lekcja: **LLM proponuje dane, ale Python je weryfikuje.**
+| Pole | Wartość |
+|---|---|
+| Misja | 1 — Structured Outputs |
+| Plik omawiany | `01_run.py` |
+| Poziom | Fundament agentic systems |
+| Główny temat | Zamiana odpowiedzi LLM na zwalidowany obiekt Pydantic |
+| Docelowa umiejętność | Umieć odróżnić tekst wygenerowany przez LLM od danych zaakceptowanych przez program |
 
 ---
 
-## 1. Cel szkoleniowy tego pliku
+## 1. Najkrótsza odpowiedź techniczna
 
-Ten plik odpowiada pierwszej misji z `README.md`: **Wymuszenie Strukturalnych Wyjść**.
-
-Celem nie jest jeszcze LangGraph, wielu agentów ani Tool Calling. Celem jest nauczyć się fundamentu, bez którego system multi-agentowy szybko staje się niekontrolowany:
-
-> odpowiedź LLM musi być zamieniona na jawny, typowany, walidowalny obiekt programu.
-
-W praktyce oznacza to przejście od:
+`01_run.py` pokazuje pierwszy profesjonalny wzorzec pracy z LLM:
 
 ```text
-Model coś napisał, więc zakładam, że jest dobrze.
+model danych → JSON Schema → prompt + JSON mode → odpowiedź LLM → walidacja Pydantic → obiekt Pythona
 ```
 
-do:
+Najważniejsza zasada tej lekcji:
 
-```text
-Model zwrócił JSON. Pydantic sprawdził pola. Dopiero teraz program uznaje wynik za poprawny.
-```
+> LLM generuje kandydat na dane. Dopiero Pydantic decyduje, czy program może te dane zaakceptować.
 
-To jest pierwszy krok w stronę architektury, w której później LangGraph będzie przenosił między node'ami nie chaotyczną historię rozmowy, ale **jawny stan workflow**.
+Ten skrypt nie jest jeszcze systemem multi-agentowym. Jest minimalnym fundamentem pod przyszłe node'y LangGraph, w których każdy agent będzie zwracał jawnie zdefiniowaną strukturę danych zamiast swobodnego tekstu.
 
 ---
 
-## 2. Intuicja
+## 2. Cel szkoleniowy
 
-Wyobraź sobie, że LLM jest pracownikiem analizującym zgłoszenia klientów. Gdy zapytasz go swobodnie:
+Celem pliku jest nauczenie trzech rzeczy:
 
-```text
-Przeanalizuj tę wiadomość.
-```
+1. jak opisać oczekiwany wynik LLM za pomocą modelu Pydantic,
+2. jak przekazać modelowi schemat oczekiwanej odpowiedzi,
+3. jak zweryfikować, czy odpowiedź modelu spełnia kontrakt danych.
 
-może odpowiedzieć na wiele sposobów:
-
-```text
-Klient jest zdenerwowany i chodzi o płatność.
-```
-
-albo:
+Po tej lekcji masz rozumieć różnicę między:
 
 ```text
-To wygląda na problem billingowy. Priorytet wysoki.
+LLM odpowiedział poprawnie językowo
 ```
 
-albo:
+oraz:
+
+```text
+program zaakceptował odpowiedź jako poprawną strukturę danych
+```
+
+W systemach agentowych interesuje nas przede wszystkim druga sytuacja.
+
+---
+
+## 3. Co dokładnie robi `01_run.py`
+
+Skrypt wykonuje następujący przepływ:
+
+1. ładuje konfigurację z pliku `.env`,
+2. tworzy klienta API kompatybilnego z OpenAI,
+3. definiuje przykładową wiadomość klienta,
+4. generuje JSON Schema z modelu `TicketAnalysis`,
+5. wysyła wiadomość do modelu LLM,
+6. prosi model o odpowiedź w formacie JSON,
+7. pobiera surowy tekst odpowiedzi,
+8. usuwa ewentualne znaczniki Markdown,
+9. waliduje odpowiedź przez Pydantic,
+10. drukuje wynik jako sformatowany JSON.
+
+Schemat przepływu:
+
+```text
+.env
+  ↓
+OpenAI-compatible client
+  ↓
+TicketAnalysis.model_json_schema()
+  ↓
+chat.completions.create(...)
+  ↓
+raw_content: str
+  ↓
+cleaning
+  ↓
+TicketAnalysis.model_validate_json(raw_content)
+  ↓
+TicketAnalysis object
+```
+
+---
+
+## 4. Główna intuicja
+
+LLM jest dobry w interpretacji języka, ale nie powinien być traktowany jako źródło prawdy. Dlatego zamiast przyjmować dowolną odpowiedź tekstową, narzucamy kontrakt danych.
+
+Swobodna odpowiedź modelu:
+
+```text
+Klient jest zdenerwowany, problem dotyczy płatności, trzeba szybko zareagować.
+```
+
+Odpowiedź użyteczna programistycznie:
 
 ```json
 {
   "category": "billing",
   "urgency": "high",
   "sentiment": "negative",
-  "summary": "Klient zgłasza podwójne naliczenie opłaty za subskrypcję."
+  "summary": "Klient zgłasza podwójne naliczenie opłaty i żąda natychmiastowego zwrotu."
 }
 ```
 
-Dla człowieka wszystkie trzy odpowiedzi są zrozumiałe. Dla programu tylko ostatnia jest wygodna, ponieważ ma stałe pola.
-
-Dlatego w systemach agentowych nie powinieneś ufać temu, że model „ładnie odpowie”. Powinieneś zdefiniować strukturę i sprawdzić ją automatycznie.
+Dla człowieka obie odpowiedzi są zrozumiałe. Dla aplikacji produkcyjnej druga odpowiedź jest znacznie lepsza, bo ma stałe pola, które można walidować, testować i przekazywać między komponentami systemu.
 
 ---
 
-## 3. Miejsce tego pliku w większej architekturze Multi-Agent System
+## 5. Kontrakt danych: `TicketAnalysis`
 
-W docelowym systemie Multi-Agent System z LangGraph każdy agent powinien mieć jasno określone:
-
-- wejście,
-- wyjście,
-- ograniczenia,
-- kryterium sukcesu,
-- walidację.
-
-`01_run.py` pokazuje najprostszy przypadek jednego agenta:
-
-| Element | W tym skrypcie | W większym systemie LangGraph |
-|---|---|---|
-| Agent | analityk zgłoszeń | Requirements Analyst Agent / QA Agent / Developer Agent |
-| Wejście | tekst e-maila klienta | fragment manuala, diff kodu, log pytest, opis zadania |
-| Wyjście | JSON z kategorią, pilnością, sentymentem i streszczeniem | Pydantic model zapisany w stanie grafu |
-| Walidacja | `TicketAnalysis.model_validate_json(...)` | walidacja Pydantic, testy, AST, ruff, pytest |
-| Stan | lokalna zmienna `result` | jawny `TypedDict` albo Pydantic state w LangGraph |
-
-To jest więc miniatura większej zasady:
-
-> Agent nie „mówi”, tylko wytwarza dane, które system może sprawdzić i przekazać dalej.
-
----
-
-## 4. Pełny przepływ danych w `01_run.py`
-
-Schemat działania:
-
-```text
-.env
-  ↓
-load_dotenv()
-  ↓
-OpenAI(base_url, api_key)
-  ↓
-TicketAnalysis → JSON Schema
-  ↓
-wiadomość klienta
-  ↓
-chat.completions.create(...)
-  ↓
-surowa odpowiedź modelu jako tekst
-  ↓
-oczyszczenie z ```json / ```
-  ↓
-TicketAnalysis.model_validate_json(...)
-  ↓
-zwalidowany obiekt Pydantic
-  ↓
-wydruk wyniku
-```
-
-Najważniejszy fragment logiczny:
-
-```python
-result = TicketAnalysis.model_validate_json(raw_content)
-```
-
-To jest granica bezpieczeństwa. Przed tą linią masz tylko tekst wygenerowany przez model. Po tej linii masz obiekt Pythona zgodny z klasą `TicketAnalysis`.
-
----
-
-## 5. Omówienie kodu krok po kroku
-
-### 5.1. Importy
-
-```python
-import os
-import json
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-from openai import OpenAI
-```
-
-Znaczenie:
-
-| Import | Rola |
-|---|---|
-| `os` | odczyt zmiennych środowiskowych, np. `OPENAI_BASE_URL` |
-| `json` | zamiana schematu Pydantic na czytelny tekst JSON |
-| `load_dotenv` | wczytanie pliku `.env` do środowiska programu |
-| `BaseModel` | bazowa klasa Pydantic do definiowania struktury danych |
-| `Field` | opis pól modelu, przydatny dla schematu JSON i instrukcji dla LLM |
-| `OpenAI` | klient API zgodny z OpenAI |
-
-Na tym etapie uczysz się, że konfiguracja modelu nie powinna być wpisana na sztywno w kodzie. Powinna być zewnętrzna, np. w `.env`.
-
----
-
-### 5.2. Model Pydantic `TicketAnalysis`
+W skrypcie kontrakt danych jest zdefiniowany tak:
 
 ```python
 class TicketAnalysis(BaseModel):
@@ -182,234 +128,100 @@ class TicketAnalysis(BaseModel):
     summary: str = Field(description="Jednozdaniowe, zwięzłe podsumowanie problemu")
 ```
 
-To jest centrum całego skryptu.
+To oznacza, że poprawna odpowiedź musi zawierać cztery pola:
 
-Model mówi programowi i LLM:
+| Pole | Znaczenie | Obecny typ |
+|---|---|---|
+| `category` | kategoria zgłoszenia | `str` |
+| `urgency` | priorytet zgłoszenia | `str` |
+| `sentiment` | nastawienie klienta | `str` |
+| `summary` | jednozdaniowe streszczenie | `str` |
 
-- wynik ma mieć pole `category`,
-- wynik ma mieć pole `urgency`,
-- wynik ma mieć pole `sentiment`,
-- wynik ma mieć pole `summary`,
-- każde pole ma być tekstem.
+### Ważne ograniczenie obecnej wersji
 
-Przykład poprawnego wyniku:
+Typ `str` jest poprawny na start, ale zbyt luźny dla kodu produkcyjnego. Pydantic sprawdzi, czy `urgency` jest tekstem, ale nie sprawdzi, czy wartość należy do zbioru `low`, `medium`, `high`.
 
-```json
-{
-  "category": "billing",
-  "urgency": "high",
-  "sentiment": "negative",
-  "summary": "Klient zgłasza podwójne naliczenie opłaty i żąda natychmiastowego zwrotu."
-}
-```
-
-Przykład błędnego wyniku:
-
-```json
-{
-  "typ": "billing",
-  "pilnosc": "wysoka"
-}
-```
-
-Dlaczego błędny? Bo nie zgadza się z modelem `TicketAnalysis`: brakuje pól `category`, `urgency`, `sentiment`, `summary`.
-
-### Ważna uwaga architektoniczna
-
-W obecnej wersji pola mają typ `str`, więc Pydantic sprawdza głównie obecność pól i ich typ tekstowy. Nie sprawdza jeszcze, czy `urgency` należy tylko do zbioru `low | medium | high`.
-
-Wersja bardziej rygorystyczna mogłaby wyglądać tak:
+Dlatego w kolejnym kroku model powinien zostać zaostrzony:
 
 ```python
 from typing import Literal
 from pydantic import BaseModel, Field
 
+
 class TicketAnalysis(BaseModel):
-    category: Literal["billing", "technical", "sales"]
-    urgency: Literal["low", "medium", "high"]
-    sentiment: Literal["positive", "neutral", "negative"]
-    summary: str = Field(min_length=5, max_length=240)
+    category: Literal["billing", "technical", "sales", "other"] = Field(
+        description="Kategoria zgłoszenia"
+    )
+    urgency: Literal["low", "medium", "high"] = Field(
+        description="Priorytet zgłoszenia"
+    )
+    sentiment: Literal["positive", "neutral", "negative"] = Field(
+        description="Nastawienie klienta"
+    )
+    summary: str = Field(
+        min_length=10,
+        max_length=240,
+        description="Jednozdaniowe, zwięzłe podsumowanie problemu"
+    )
 ```
 
-To jest kierunek produkcyjny: im bardziej krytyczne dane, tym mniej swobody dla modelu.
+To jest wersja bardziej profesjonalna, bo ogranicza swobodę modelu i ułatwia późniejsze testowanie.
 
 ---
 
-### 5.3. Funkcja `main()`
+## 6. JSON mode a walidacja Pydantic
+
+W skrypcie pojawia się parametr:
 
 ```python
-def main() -> None:
-    """Główna funkcja wykonująca zapytanie do lokalnego modelu LLM."""
+response_format={"type": "json_object"}
 ```
 
-`main()` jest punktem startowym logiki programu. Adnotacja `-> None` oznacza, że funkcja nie zwraca wartości, tylko wykonuje działania uboczne: odczytuje konfigurację, pyta model i drukuje wynik.
+Ten parametr pomaga uzyskać odpowiedź będącą obiektem JSON. Nie należy jednak mylić go z pełną walidacją biznesową.
 
-W późniejszej wersji agentowej nie zawsze będziemy drukować wynik. Częściej node LangGraph będzie zwracał zaktualizowany stan, np.:
+Różnica jest następująca:
 
-```python
-return {"ticket_analysis": result}
-```
+| Mechanizm | Kiedy działa | Co robi | Czego nie gwarantuje |
+|---|---|---|---|
+| Prompt systemowy | przed generacją | instruuje model, jak ma odpowiedzieć | nie gwarantuje zgodności |
+| `response_format` | podczas generacji / po stronie API | wymusza lub wspiera format JSON | nie musi gwarantować zgodności ze wszystkimi polami modelu |
+| Pydantic | po odpowiedzi modelu | parsuje i waliduje wynik | nie poprawia automatycznie błędnej odpowiedzi modelu |
 
----
+Profesjonalna zasada:
 
-### 5.4. Wczytanie `.env`
-
-```python
-load_dotenv()
-```
-
-Ta linia ładuje zmienne z pliku `.env`.
-
-Minimalny plik `.env` może wyglądać tak:
-
-```env
-OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_API_KEY=not-needed
-MODEL_NAME=nazwa-twojego-modelu
-```
-
-Znaczenie:
-
-| Zmienna | Znaczenie |
-|---|---|
-| `OPENAI_BASE_URL` | adres serwera LLM kompatybilnego z OpenAI API |
-| `OPENAI_API_KEY` | klucz API; przy lokalnych modelach często symboliczny |
-| `MODEL_NAME` | nazwa modelu, który ma obsłużyć zapytanie |
-
-Jeżeli korzystasz z innego lokalnego serwera, np. vLLM, LM Studio albo innego endpointu zgodnego z OpenAI, wartości będą inne.
-
----
-
-### 5.5. Utworzenie klienta OpenAI
-
-```python
-client = OpenAI(
-    base_url=os.getenv("OPENAI_BASE_URL"),
-    api_key=os.getenv("OPENAI_API_KEY", "not-needed")
-)
-model_name = os.getenv("MODEL_NAME")
-```
-
-Tu powstaje klient komunikujący się z modelem.
-
-Ważne:
-
-- `base_url` decyduje, gdzie wysyłane jest zapytanie,
-- `api_key` jest pobierany z `.env`,
-- `model_name` wskazuje konkretny model.
-
-Potencjalny problem: jeżeli `MODEL_NAME` nie istnieje w `.env`, zmienna `model_name` będzie miała wartość `None`. Wtedy API może zwrócić błąd.
-
-Wersja bardziej odporna:
-
-```python
-model_name = os.getenv("MODEL_NAME")
-if not model_name:
-    raise ValueError("Brakuje zmiennej MODEL_NAME w pliku .env")
+```text
+JSON mode pomaga modelowi odpowiedzieć poprawnie.
+Pydantic decyduje, czy aplikacja może tej odpowiedzi zaufać.
 ```
 
 ---
 
-### 5.6. Dane wejściowe: wiadomość klienta
+## 7. Generowanie schematu JSON
 
-```python
-customer_email = (
-    "Dzień dobry, piszę do was już trzeci raz! Z mojego konta pobrano podwójną "
-    "opłatę za subskrypcję w tym miesiącu. Jestem wściekły, bo potrzebuję tych pieniędzy. "
-    "Proszę o natychmiastowy zwrot na moją kartę z końcówką 4432, inaczej rezygnuję z usług."
-)
-```
-
-To jest przykładowe wejście dla modelu.
-
-Model powinien z niego wywnioskować:
-
-| Cecha | Oczekiwana wartość |
-|---|---|
-| kategoria | `billing` |
-| pilność | `high` |
-| sentyment | `negative` |
-| streszczenie | podwójna opłata i żądanie zwrotu |
-
-Ważna uwaga: tekst zawiera końcówkę karty `4432`. W produkcyjnych systemach trzeba uważać na dane wrażliwe. W kolejnych etapach warto dodać filtr lub redakcję danych przed wysłaniem ich do modelu.
-
----
-
-### 5.7. Generowanie schematu JSON z Pydantic
+Ten fragment:
 
 ```python
 schema_json = json.dumps(TicketAnalysis.model_json_schema(), indent=2)
 ```
 
-Ta linia robi bardzo ważną rzecz:
+tworzy opis oczekiwanej struktury danych na podstawie klasy Pydantic.
 
-1. `TicketAnalysis.model_json_schema()` generuje schemat JSON z modelu Pydantic,
-2. `json.dumps(..., indent=2)` zamienia go na czytelny tekst,
-3. ten tekst zostanie później wklejony do promptu systemowego.
+Dzięki temu prompt nie musi ręcznie powtarzać struktury modelu. To zmniejsza ryzyko niespójności między kodem a instrukcją dla LLM.
 
-Czyli zamiast ręcznie pisać:
+W praktyce powstaje wzorzec:
 
 ```text
-Zwróć JSON z polami category, urgency, sentiment, summary.
+Pydantic model jest źródłem prawdy dla struktury danych.
+Prompt tylko przekazuje tę strukturę modelowi LLM.
 ```
 
-program generuje opis struktury automatycznie z klasy Pythona.
-
-To zmniejsza ryzyko rozjazdu między kodem a promptem.
+To ważny nawyk architektoniczny. W profesjonalnym systemie nie chcesz mieć jednego schematu w kodzie, a drugiego — lekko innego — w promptach.
 
 ---
 
-### 5.8. Wywołanie modelu LLM
+## 8. Prompt systemowy
 
-```python
-response = client.chat.completions.create(
-    model=model_name,
-    messages=[...],
-    response_format={"type": "json_object"},
-    temperature=0.1
-)
-```
-
-To jest właściwe zapytanie do modelu.
-
-#### `model=model_name`
-
-Wskazuje model z `.env`.
-
-#### `messages=[...]`
-
-Lista wiadomości składa się z dwóch ról:
-
-1. `system` — instrukcja nadrzędna,
-2. `user` — konkretne zadanie z wiadomością klienta.
-
-#### `response_format={"type": "json_object"}`
-
-To mówi API, że odpowiedź ma być obiektem JSON.
-
-Ważna uwaga: w tym skrypcie jest to **wymuszenie formatu JSON**, ale nie pełne, ścisłe wymuszenie całego schematu przez API. Schemat Pydantic jest przekazywany w treści promptu, a ostateczna kontrola odbywa się dopiero tutaj:
-
-```python
-TicketAnalysis.model_validate_json(raw_content)
-```
-
-Dlatego aktualna architektura to:
-
-```text
-miękkie prowadzenie modelu przez prompt + JSON mode + twarda walidacja Pydantic
-```
-
-To jest bardzo dobry etap szkoleniowy, ale nie należy mylić go z pełną gwarancją poprawności przed walidacją.
-
-#### `temperature=0.1`
-
-Niska temperatura ogranicza losowość odpowiedzi.
-
-Przy zadaniach strukturalnych zwykle chcesz mało kreatywności, a dużo powtarzalności.
-
----
-
-### 5.9. Prompt systemowy
+W skrypcie prompt systemowy wygląda koncepcyjnie tak:
 
 ```python
 {
@@ -422,73 +234,20 @@ Przy zadaniach strukturalnych zwykle chcesz mało kreatywności, a dużo powtarz
 }
 ```
 
-Ten prompt pełni rolę kontraktu z modelem.
+Ten prompt robi cztery rzeczy:
 
-Mówi:
+1. nadaje modelowi rolę,
+2. zakazuje swobodnego komentarza,
+3. zakazuje Markdown,
+4. przekazuje schemat JSON.
 
-- jaka jest rola modelu,
-- że wynik ma być czystym JSON-em,
-- że nie wolno dodawać Markdown,
-- że JSON ma pasować do schematu.
-
-To jest dobry wzorzec, ale pamiętaj: prompt nie jest walidatorem. Prompt prosi. Pydantic sprawdza.
+To jest dobry wzorzec na start. W wersji produkcyjnej warto jednak doprecyzować, że model nie powinien dopisywać pól spoza schematu i powinien wybierać wartości z zamkniętych słowników, jeśli model Pydantic używa `Literal`.
 
 ---
 
-### 5.10. Prompt użytkownika
+## 9. Czyszczenie odpowiedzi z Markdown
 
-```python
-{
-    "role": "user",
-    "content": f"Przeanalizuj poniższą wiadomość i zwróć JSON:\n{customer_email}"
-}
-```
-
-Ta wiadomość zawiera właściwe zadanie.
-
-Warto zauważyć rozdzielenie odpowiedzialności:
-
-| Rola | Co robi |
-|---|---|
-| `system` | ustala format, rolę i ograniczenia |
-| `user` | przekazuje dane do analizy |
-
-W większym systemie agentowym podobny podział będzie bardzo ważny. Instrukcja agenta powinna być stabilna, a dane wejściowe powinny być zmienną częścią stanu.
-
----
-
-### 5.11. Odczyt surowej odpowiedzi
-
-```python
-raw_content = response.choices[0].message.content.strip()
-```
-
-Ta linia pobiera tekst wygenerowany przez model.
-
-Na tym etapie `raw_content` może wyglądać tak:
-
-```json
-{"category":"billing","urgency":"high","sentiment":"negative","summary":"Klient zgłasza podwójne naliczenie opłaty."}
-```
-
-Ale niektóre modele mimo instrukcji mogą zwrócić:
-
-```markdown
-```json
-{
-  "category": "billing",
-  "urgency": "high",
-  "sentiment": "negative",
-  "summary": "Klient zgłasza podwójne naliczenie opłaty."
-}
-```
-```
-
-Dlatego autor skryptu dodał kolejną sekcję zabezpieczającą.
-
----
-
-### 5.12. Czyszczenie znaczników Markdown
+Skrypt zawiera zabezpieczenie:
 
 ```python
 if raw_content.startswith("```json"):
@@ -501,48 +260,49 @@ if raw_content.endswith("```"):
 raw_content = raw_content.strip()
 ```
 
-To jest praktyczne zabezpieczenie przed sytuacją, w której model opakuje JSON w blok Markdown.
-
-Dlaczego to potrzebne?
-
-Bo taki tekst:
-
-```text
-```json
-{"category": "billing"}
-```
-```
-
-nie jest czystym JSON-em. Pydantic nie powinien tego przyjąć jako JSON.
-
-Uwaga produkcyjna: to zabezpieczenie jest użyteczne, ale nie idealne. W większym systemie lepiej byłoby mieć osobną funkcję:
+To działa dla prostych przypadków, ale profesjonalnie lepiej wydzielić tę logikę do osobnej funkcji:
 
 ```python
-def strip_markdown_json_fence(text: str) -> str:
-    ...
+def clean_json_response(raw_content: str) -> str:
+    text = raw_content.strip()
+
+    if text.startswith("```json"):
+        text = text.removeprefix("```json").strip()
+    elif text.startswith("```"):
+        text = text.removeprefix("```").strip()
+
+    if text.endswith("```"):
+        text = text.removesuffix("```").strip()
+
+    return text
 ```
 
-i testy jednostkowe dla kilku przypadków odpowiedzi.
+Dlaczego to jest bardziej profesjonalne?
+
+- `main()` staje się krótszy,
+- funkcję można testować jednostkowo,
+- odpowiedzialność jest nazwana,
+- łatwiej później wymienić parser na bardziej rygorystyczny.
 
 ---
 
-### 5.13. Walidacja Pydantic
+## 10. Walidacja Pydantic
+
+Najważniejsza linia skryptu:
 
 ```python
 result = TicketAnalysis.model_validate_json(raw_content)
 ```
 
-To najważniejsza linia w całym pliku.
+Ta linia robi trzy rzeczy:
 
-Robi trzy rzeczy:
-
-1. parsuje tekst jako JSON,
-2. sprawdza, czy JSON pasuje do modelu `TicketAnalysis`,
+1. próbuje sparsować `raw_content` jako JSON,
+2. sprawdza zgodność z modelem `TicketAnalysis`,
 3. zwraca instancję klasy `TicketAnalysis`.
 
-Po tej linii `result` nie jest już tekstem. To obiekt Pythona.
+Po tej linii `result` nie jest już zwykłym tekstem. To zwalidowany obiekt Pythona.
 
-Możesz odwołać się do pól:
+Można używać go tak:
 
 ```python
 print(result.category)
@@ -551,370 +311,82 @@ print(result.sentiment)
 print(result.summary)
 ```
 
-To jest dokładnie ten typ obiektu, który w LangGraph można później zapisać do stanu.
+W przyszłym grafie LangGraph taki wynik powinien trafić do jawnego stanu workflow, a nie tylko zostać wydrukowany w terminalu.
 
 ---
 
-### 5.14. Wydruk wyniku
+## 11. Obsługa błędów
 
-```python
-print("\nSUKCES. Zgłoszenie zostało przeprocesowane w obiekt Pydantic:")
-print(result.model_dump_json(indent=4))
-```
-
-Pierwsza linia drukuje komunikat sukcesu.
-
-Druga linia zamienia obiekt Pydantic z powrotem na JSON, tylko po to, żeby ładnie go wyświetlić.
-
-To nie znaczy, że `result` jest stringiem. `result` pozostaje obiektem Pydantic. `model_dump_json(...)` to tylko metoda prezentacji.
-
----
-
-### 5.15. Obsługa błędów
+Obecna wersja łapie wszystkie wyjątki:
 
 ```python
 except Exception as error:
     print(f"\nBłąd wykonania: {error}")
-    if 'raw_content' in locals():
-        print(f"Surowa odpowiedź modelu:\n{raw_content}")
 ```
 
-Ta sekcja łapie błędy.
+Do nauki jest to akceptowalne, ale wersja profesjonalna powinna rozróżniać typy błędów:
 
-Mogą to być między innymi:
+- brak konfiguracji,
+- błąd połączenia z modelem,
+- brak treści w odpowiedzi,
+- błąd parsowania JSON,
+- błąd walidacji Pydantic.
 
-- brak połączenia z lokalnym serwerem LLM,
-- zła nazwa modelu,
-- brak zmiennej `MODEL_NAME`,
-- model zwrócił tekst, który nie jest JSON-em,
-- model zwrócił JSON niezgodny ze strukturą `TicketAnalysis`.
-
-Dobra praktyka: gdy walidacja się nie uda, warto pokazać surową odpowiedź modelu. Dzięki temu możesz debugować, czy problem jest w modelu, promptcie, konfiguracji czy walidacji.
-
-Wersja bardziej precyzyjna powinna łapać osobno błędy Pydantic, np. `ValidationError`, zamiast ogólnego `Exception`.
-
----
-
-### 5.16. Uruchomienie jako skrypt
+Minimalny kierunek poprawy:
 
 ```python
-if __name__ == "__main__":
-    main()
+from pydantic import ValidationError
+
+try:
+    result = TicketAnalysis.model_validate_json(raw_content)
+except ValidationError as error:
+    print("Model zwrócił JSON niezgodny ze schematem TicketAnalysis.")
+    print(error)
+    print("Surowa odpowiedź modelu:")
+    print(raw_content)
 ```
 
-Ten idiom oznacza:
-
-- jeżeli plik uruchamiasz bezpośrednio: wykonaj `main()`,
-- jeżeli plik importujesz jako moduł: nie wykonuj automatycznie `main()`.
-
-To jest ważne dla testowania. Dzięki temu w przyszłości będzie można importować funkcje z pliku bez automatycznego wykonywania zapytania do LLM.
+To jest ważne, bo w systemie agentowym różne błędy powinny prowadzić do różnych decyzji grafu. Błąd walidacji może prowadzić do retry. Brak konfiguracji powinien zatrzymać program natychmiast.
 
 ---
 
-## 6. Jak uruchomić skrypt
+## 12. Bezpieczeństwo danych wejściowych
 
-### 6.1. Instalacja zależności
-
-W katalogu projektu:
-
-```bash
-python -m venv .venv
-```
-
-Linux / macOS:
-
-```bash
-source .venv/bin/activate
-```
-
-Windows PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-Instalacja bibliotek:
-
-```bash
-pip install openai pydantic python-dotenv
-```
-
-### 6.2. Plik `.env`
-
-Utwórz plik `.env` obok `01_run.py`:
-
-```env
-OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_API_KEY=not-needed
-MODEL_NAME=nazwa-twojego-modelu
-```
-
-Dostosuj `OPENAI_BASE_URL` i `MODEL_NAME` do swojego środowiska.
-
-### 6.3. Uruchomienie
-
-```bash
-python 01_run.py
-```
-
-Przykładowy wynik:
-
-```json
-{
-    "category": "billing",
-    "urgency": "high",
-    "sentiment": "negative",
-    "summary": "Klient zgłasza podwójne naliczenie opłaty za subskrypcję i żąda natychmiastowego zwrotu."
-}
-```
-
-Dokładne słowa w `summary` mogą się różnić, ale struktura powinna pozostać taka sama.
-
----
-
-## 7. Co ten plik robi dobrze
-
-### 7.1. Używa Pydantic jako kontraktu danych
-
-To bardzo dobry kierunek. Model danych jest jawny, nazwany i możliwy do walidacji.
-
-### 7.2. Generuje schemat z kodu
-
-Zamiast pisać schemat ręcznie w promptcie, skrypt bierze go z `TicketAnalysis.model_json_schema()`.
-
-To ogranicza niespójność między definicją Pythona a instrukcją dla modelu.
-
-### 7.3. Waliduje wynik po stronie programu
-
-To jest kluczowa zasada systemów agentowych:
-
-> LLM może się mylić. Program musi sprawdzić wynik.
-
-### 7.4. Oddziela konfigurację od kodu
-
-`OPENAI_BASE_URL`, `OPENAI_API_KEY` i `MODEL_NAME` pochodzą ze środowiska, a nie z kodu.
-
----
-
-## 8. Ograniczenia obecnej wersji
-
-### 8.1. Pola są zbyt luźne
-
-Obecnie:
-
-```python
-urgency: str
-```
-
-pozwala na wartości:
+W przykładowym tekście znajduje się końcówka karty płatniczej:
 
 ```text
-"high"
-"urgent"
-"bardzo pilne"
-"natychmiast!!!"
+karta z końcówką 4432
 ```
 
-Dla produkcyjnego systemu lepiej użyć `Literal`.
+W ćwiczeniu to akceptowalne, ale w systemie produkcyjnym należy traktować takie dane ostrożnie.
 
----
-
-### 8.2. `response_format={"type": "json_object"}` nie wystarcza jako pełna walidacja
-
-Ten parametr pomaga uzyskać JSON, ale pełną kontrolę daje dopiero Pydantic.
-
-Dlatego nie myśl:
-
-```text
-response_format załatwia wszystko.
-```
-
-Myśl:
-
-```text
-response_format pomaga, ale walidacja Pydantic decyduje.
-```
-
----
-
-### 8.3. Brak osobnych funkcji utrudnia testy
-
-Obecnie większość logiki jest w `main()`.
-
-Do nauki to jest akceptowalne. Do rozwoju projektu warto rozdzielić kod na funkcje:
-
-```python
-def build_schema() -> str:
-    ...
-
-def build_messages(customer_email: str, schema_json: str) -> list[dict]:
-    ...
-
-def clean_json_response(raw_content: str) -> str:
-    ...
-
-def validate_ticket_analysis(raw_content: str) -> TicketAnalysis:
-    ...
-```
-
-Wtedy każdą funkcję można przetestować osobno.
-
----
-
-### 8.4. Brak testów jednostkowych
-
-Na tym etapie powinieneś dodać małe testy dla:
-
-- poprawnego JSON-a,
-- JSON-a opakowanego w ```json,
-- JSON-a bez wymaganego pola,
-- błędnej wartości `urgency`, gdy dodasz `Literal`.
-
----
-
-### 8.5. Dane wrażliwe
-
-Wiadomość klienta zawiera końcówkę karty płatniczej. W ćwiczeniu to nie problem, ale w produkcji powinieneś dodać etap redakcji danych wrażliwych.
-
-Przykład kierunku:
+Profesjonalny kierunek:
 
 ```python
 def redact_sensitive_data(text: str) -> str:
-    ...
+    # Minimalny przykład szkoleniowy, niepełny produkcyjnie.
+    return text.replace("końcówką 4432", "końcówką ****")
 ```
+
+Docelowo warto dodać osobny etap redakcji danych wrażliwych przed wysłaniem tekstu do modelu.
 
 ---
 
-## 9. Typowe błędy początkującego
+## 13. Miejsce w architekturze LangGraph
 
-### Błąd 1: Traktowanie odpowiedzi LLM jako prawdy
-
-Źle:
+W obecnej wersji skrypt kończy się wydrukiem wyniku:
 
 ```python
-print(response.choices[0].message.content)
+print(result.model_dump_json(indent=4))
 ```
 
-i uznanie, że to wystarczy.
+W LangGraph node nie powinien tylko drukować wyniku. Powinien zwracać zaktualizowany stan.
 
-Dobrze:
-
-```python
-result = TicketAnalysis.model_validate_json(raw_content)
-```
-
----
-
-### Błąd 2: Parsowanie tekstu przez `split()` albo regex
-
-Źle:
-
-```python
-category = raw_content.split("category:")[1]
-```
-
-Dobrze:
-
-```python
-result = TicketAnalysis.model_validate_json(raw_content)
-```
-
-W systemach agentowych unikamy parsowania swobodnego tekstu. Preferujemy jawny JSON i walidację.
-
----
-
-### Błąd 3: Za szerokie typy
-
-Na początku `str` jest proste, ale zbyt luźne.
-
-Lepszy następny krok:
-
-```python
-urgency: Literal["low", "medium", "high"]
-```
-
----
-
-### Błąd 4: Brak widoczności błędu modelu
-
-Jeżeli walidacja się nie uda, musisz zobaczyć surową odpowiedź modelu. Ten skrypt robi to dobrze przez:
-
-```python
-print(f"Surowa odpowiedź modelu:\n{raw_content}")
-```
-
----
-
-### Błąd 5: Jeden wielki `main()` w nieskończoność
-
-Na start jest dobrze. Później należy rozdzielać logikę na małe funkcje i testować każdą z nich.
-
----
-
-## 10. Minimalna wersja mentalna
-
-Gdyby sprowadzić ten plik do jednej idei, wygląda ona tak:
-
-```python
-class ExpectedOutput(BaseModel):
-    field: str
-
-raw = ask_llm("Zwróć JSON zgodny ze schematem")
-validated = ExpectedOutput.model_validate_json(raw)
-```
-
-To jest wzorzec, który będzie wracał w całym projekcie:
-
-```text
-schemat → LLM → JSON → walidacja → stan aplikacji
-```
-
----
-
-## 11. Wersja produkcyjna — kierunek rozwoju
-
-Docelowo ten skrypt warto przekształcić w bardziej testowalną strukturę:
-
-```text
-01_run.py
-src/
-  ticket_analysis/
-    models.py
-    prompts.py
-    parser.py
-    client.py
-tests/
-  test_parser.py
-  test_models.py
-```
-
-Przykładowy podział odpowiedzialności:
-
-| Plik | Odpowiedzialność |
-|---|---|
-| `models.py` | Pydantic models |
-| `prompts.py` | budowanie wiadomości system/user |
-| `parser.py` | czyszczenie i walidacja JSON |
-| `client.py` | konfiguracja klienta OpenAI-compatible |
-| `tests/` | testy jednostkowe |
-
-Dopiero po takim uporządkowaniu warto przenieść logikę do LangGraph jako node.
-
----
-
-## 12. Jak ten skrypt stanie się node'em LangGraph
-
-Obecnie funkcja robi wszystko lokalnie:
-
-```python
-def main() -> None:
-    ...
-```
-
-W LangGraph podobna logika mogłaby stać się node'em:
+Minimalna wersja koncepcyjna:
 
 ```python
 from typing import TypedDict
+
 
 class TicketState(TypedDict):
     customer_email: str
@@ -924,7 +396,8 @@ class TicketState(TypedDict):
 
 def analyze_ticket_node(state: TicketState) -> TicketState:
     raw_content = ask_llm_for_ticket_analysis(state["customer_email"])
-    result = TicketAnalysis.model_validate_json(raw_content)
+    clean_content = clean_json_response(raw_content)
+    result = TicketAnalysis.model_validate_json(clean_content)
 
     return {
         **state,
@@ -932,98 +405,59 @@ def analyze_ticket_node(state: TicketState) -> TicketState:
     }
 ```
 
-Wtedy wynik pracy agenta nie znika w konsoli, tylko trafia do jawnego stanu grafu.
-
-To jest dokładnie kierunek Multi-Agent System:
+To pokazuje przejście od skryptu liniowego do architektury stanowej:
 
 ```text
-node analizuje → waliduje → aktualizuje stan → graf decyduje, co dalej
+funkcja drukująca wynik → node aktualizujący jawny stan
 ```
 
 ---
 
-## 13. Ćwiczenia praktyczne
+## 14. Co obecny plik robi dobrze
 
-### Ćwiczenie 1 — uruchomienie bez zmian
-
-Uruchom:
-
-```bash
-python 01_run.py
-```
-
-Sprawdź, czy otrzymujesz JSON z polami:
-
-- `category`,
-- `urgency`,
-- `sentiment`,
-- `summary`.
-
-Kryterium zaliczenia: skrypt kończy się komunikatem `SUKCES`.
+| Obszar | Ocena | Komentarz |
+|---|---|---|
+| Cel lekcji | dobry | jasno pokazuje, że LLM ma zwracać dane, nie opis |
+| Pydantic | dobry | używa modelu jako kontraktu danych |
+| JSON Schema | dobry | schemat pochodzi z kodu, nie z ręcznego opisu |
+| Walidacja | dobry | wynik jest sprawdzany po stronie programu |
+| Konfiguracja | dobry | używa `.env` zamiast wpisywać endpoint w kodzie |
+| Testowalność | do poprawy | logika jest jeszcze zbyt mocno skupiona w `main()` |
+| Rygor typów | do poprawy | pola `str` warto zastąpić przez `Literal` tam, gdzie są zamknięte słowniki |
+| Obsługa błędów | do poprawy | warto rozdzielić `ValidationError` od błędów konfiguracji i API |
 
 ---
 
-### Ćwiczenie 2 — zaostrzenie typów
+## 15. Najważniejsze poprawki profesjonalizujące
 
-Zmień model na:
+### Poprawka 1 — zaostrzyć model Pydantic
+
+Zamień luźne `str` na `Literal`, gdzie wartości są zamknięte.
 
 ```python
-from typing import Literal
-
-class TicketAnalysis(BaseModel):
-    category: Literal["billing", "technical", "sales"]
-    urgency: Literal["low", "medium", "high"]
-    sentiment: Literal["positive", "neutral", "negative"]
-    summary: str = Field(description="Jednozdaniowe, zwięzłe podsumowanie problemu")
+urgency: Literal["low", "medium", "high"]
 ```
 
-Uruchom ponownie skrypt.
-
-Kryterium zaliczenia: model nadal zwraca poprawny wynik, a Pydantic pilnuje dozwolonych wartości.
+Efekt: model nie może zaakceptować wartości typu `critical`, `urgent`, `bardzo pilne`.
 
 ---
 
-### Ćwiczenie 3 — wymuszenie błędu walidacji
+### Poprawka 2 — wydzielić czyszczenie JSON do funkcji
 
-Tymczasowo zmień prompt tak, aby model zwrócił błędną wartość, np. `urgency="critical"`.
-
-Sprawdź, czy Pydantic zgłosi błąd.
-
-Kryterium zaliczenia: rozumiesz, że błąd walidacji jest sukcesem architektury, bo system wykrył niepoprawne dane.
-
----
-
-### Ćwiczenie 4 — wydzielenie funkcji czyszczącej
-
-Wydziel ten fragment:
-
-```python
-if raw_content.startswith("```json"):
-    raw_content = raw_content[7:]
-if raw_content.startswith("```"):
-    raw_content = raw_content[3:]
-if raw_content.endswith("```"):
-    raw_content = raw_content[:-3]
-
-raw_content = raw_content.strip()
-```
-
-do funkcji:
+Zamiast trzymać czyszczenie Markdown w `main()`, zrób:
 
 ```python
 def clean_json_response(raw_content: str) -> str:
     ...
 ```
 
-Kryterium zaliczenia: `main()` staje się krótszy, a funkcję można przetestować osobno.
+Efekt: można napisać testy jednostkowe.
 
 ---
 
-### Ćwiczenie 5 — przygotowanie pod testy
+### Poprawka 3 — dodać testy
 
-Dodaj testy dla funkcji `clean_json_response`.
-
-Przykładowe przypadki:
+Minimalne testy:
 
 ```python
 def test_clean_plain_json():
@@ -1035,33 +469,184 @@ def test_clean_json_markdown_fence():
     assert clean_json_response(raw) == '{"a": 1}'
 ```
 
-Kryterium zaliczenia: przynajmniej dwa testy przechodzą w `pytest`.
+Następnie test dla walidacji:
+
+```python
+import pytest
+from pydantic import ValidationError
+
+
+def test_invalid_urgency_is_rejected():
+    raw = '''
+    {
+      "category": "billing",
+      "urgency": "critical",
+      "sentiment": "negative",
+      "summary": "Klient zgłasza podwójną opłatę."
+    }
+    '''
+
+    with pytest.raises(ValidationError):
+        TicketAnalysis.model_validate_json(raw)
+```
 
 ---
 
-## 14. Pytania kontrolne
+### Poprawka 4 — rozdzielić błędy
 
-Odpowiedz samodzielnie po przerobieniu pliku:
+Nie każdy błąd oznacza to samo.
 
-1. Czym różni się surowa odpowiedź LLM od obiektu Pydantic?
-2. Dlaczego `response_format={"type": "json_object"}` nie zastępuje walidacji Pydantic?
-3. Co się stanie, gdy model nie zwróci pola `summary`?
-4. Dlaczego warto użyć `Literal` dla `urgency`?
-5. Który fragment kodu powinien zostać wydzielony do funkcji jako pierwszy?
-6. Jak zapisałbyś wynik `TicketAnalysis` w stanie LangGraph?
+```text
+brak MODEL_NAME → błąd konfiguracji
+brak serwera LLM → błąd infrastruktury
+niepoprawny JSON → błąd formatu odpowiedzi
+niezgodny JSON → błąd walidacji danych
+```
+
+W systemie LangGraph te przypadki będą później prowadzić do różnych ścieżek grafu.
 
 ---
 
-## 15. Kryterium zaliczenia tej lekcji
+### Poprawka 5 — dodać checklistę uruchomienia
 
-Uznaj lekcję za zaliczoną, gdy potrafisz:
+Przed uruchomieniem sprawdź:
 
-- wyjaśnić, po co istnieje klasa `TicketAnalysis`,
-- powiedzieć, czym jest `model_json_schema()`,
-- wskazać różnicę między JSON-em jako tekstem a obiektem Pydantic,
-- uruchomić skrypt z własnym `.env`,
+- czy istnieje `.env`,
+- czy `OPENAI_BASE_URL` wskazuje działający serwer,
+- czy `MODEL_NAME` jest poprawny,
+- czy model obsługuje tryb JSON albo przynajmniej dobrze reaguje na prompt,
+- czy środowisko ma zainstalowane `openai`, `pydantic`, `python-dotenv`.
+
+---
+
+## 16. Minimalna profesjonalna wersja funkcji pomocniczych
+
+Poniższy kod nie zastępuje całego skryptu. Pokazuje kierunek refaktoryzacji.
+
+```python
+from typing import Literal
+from pydantic import BaseModel, Field, ValidationError
+
+
+class TicketAnalysis(BaseModel):
+    category: Literal["billing", "technical", "sales", "other"] = Field(
+        description="Kategoria zgłoszenia"
+    )
+    urgency: Literal["low", "medium", "high"] = Field(
+        description="Priorytet zgłoszenia"
+    )
+    sentiment: Literal["positive", "neutral", "negative"] = Field(
+        description="Nastawienie klienta"
+    )
+    summary: str = Field(
+        min_length=10,
+        max_length=240,
+        description="Jednozdaniowe podsumowanie problemu"
+    )
+
+
+def clean_json_response(raw_content: str) -> str:
+    text = raw_content.strip()
+
+    if text.startswith("```json"):
+        text = text.removeprefix("```json").strip()
+    elif text.startswith("```"):
+        text = text.removeprefix("```").strip()
+
+    if text.endswith("```"):
+        text = text.removesuffix("```").strip()
+
+    return text
+
+
+def validate_ticket_analysis(raw_content: str) -> TicketAnalysis:
+    clean_content = clean_json_response(raw_content)
+    return TicketAnalysis.model_validate_json(clean_content)
+```
+
+---
+
+## 17. Ćwiczenie praktyczne
+
+Wykonaj trzy małe kroki, nie wszystko naraz.
+
+### Krok 1
+
+Zmień model `TicketAnalysis`, używając `Literal` dla pól:
+
+- `category`,
+- `urgency`,
+- `sentiment`.
+
+Kryterium zaliczenia: skrypt nadal działa dla poprawnej odpowiedzi.
+
+### Krok 2
+
+Wydziel funkcję:
+
+```python
+def clean_json_response(raw_content: str) -> str:
+    ...
+```
+
+Kryterium zaliczenia: `main()` jest krótszy, a zachowanie programu się nie zmieniło.
+
+### Krok 3
+
+Dodaj testy dla `clean_json_response` i walidacji `TicketAnalysis`.
+
+Kryterium zaliczenia:
+
+```bash
+pytest
+```
+
+kończy się sukcesem.
+
+---
+
+## 18. Pytania kontrolne
+
+Odpowiedz samodzielnie:
+
+1. Czy `response_format={"type": "json_object"}` zastępuje Pydantic?
+2. Co dokładnie robi `model_validate_json(...)`?
+3. Dlaczego `Literal` jest lepszy niż `str` dla pola `urgency`?
+4. Dlaczego czyszczenie Markdown warto wydzielić do funkcji?
+5. Jaka jest różnica między błędem formatu JSON a błędem walidacji Pydantic?
+6. Co powinien zwracać node LangGraph: wydruk w konsoli czy zaktualizowany stan?
+
+---
+
+## 19. Kryterium zaliczenia lekcji
+
+Lekcja jest zaliczona, gdy potrafisz:
+
+- wyjaśnić rolę `TicketAnalysis`,
+- wygenerować JSON Schema z modelu Pydantic,
+- odróżnić JSON mode od walidacji Pydantic,
 - celowo wywołać błąd walidacji,
-- poprawić model przez `Literal`,
-- wskazać, jak ta logika stanie się node'em w LangGraph.
+- zaostrzyć model przez `Literal`,
+- wydzielić czyszczenie odpowiedzi do osobnej funkcji,
+- napisać minimalne testy jednostkowe,
+- opisać, jak ta logika stanie się node'em LangGraph.
 
-Po tym etapie jesteś gotowy do kolejnej misji: **Tool Calling**, czyli dodania modelowi kontrolowanych „rąk” w postaci funkcji/narzędzi.
+---
+
+## 20. Następny krok
+
+Po tej lekcji naturalnym następnym etapem jest **Tool Calling**.
+
+Structured Outputs odpowiadają na pytanie:
+
+```text
+Jak zmusić model, aby zwrócił dane w kontrolowanym formacie?
+```
+
+Tool Calling odpowie na pytanie:
+
+```text
+Jak pozwolić modelowi wybrać kontrolowaną funkcję, ale nie pozwolić mu robić dowolnych rzeczy?
+```
+
+To będzie pierwszy krok w stronę agentów, którzy nie tylko odpowiadają, ale potrafią wywoływać ograniczone, testowalne narzędzia.
